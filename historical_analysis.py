@@ -5,7 +5,7 @@ import argparse
 import intrinio_sdk
 from intrinio_sdk.rest import ApiException
 from pprint import pprint
-intrinio_sdk.ApiClient().configuration.api_key['api_key'] = '<YOUR INTRINIO API KEY HERE'
+intrinio_sdk.ApiClient().configuration.api_key['api_key'] = '<YOUR INTRINIO API KEY HERE>'
 
 company_api = intrinio_sdk.CompanyApi()
 
