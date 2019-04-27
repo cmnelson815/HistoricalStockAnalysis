@@ -1,7 +1,7 @@
-
 from __future__ import print_function
 from trend import Trend
 import argparse
+import datetime
 import intrinio_sdk
 from intrinio_sdk.rest import ApiException
 from pprint import pprint
@@ -10,13 +10,9 @@ intrinio_sdk.ApiClient().configuration.api_key['api_key'] = 'OjM0MTczYzFlODVmMmY
 company_api = intrinio_sdk.CompanyApi()
 
 
-def historical_data_per_company(ticker, start_date):
-    if start_date:
-        history_response = company_api.get_company_historical_data(ticker, 'adj_close_price', start_date=start_date,
-                                                               end_date='2019-03-20', page_size=8000)
-    else:
-        history_response = company_api.get_company_historical_data(ticker, 'adj_close_price', start_date='2003-01-01',
-                                                                   end_date='2019-03-20', page_size=8000)
+def historical_data_per_company(ticker, start_date, end_date):
+    history_response = company_api.get_company_historical_data(ticker, 'adj_close_price', start_date=start_date,
+                                                               end_date=end_date, page_size=8000)
     values = []
     historical_data = history_response.historical_data
     for value in historical_data:
@@ -25,20 +21,33 @@ def historical_data_per_company(ticker, start_date):
     historical_data.reverse()
     values.reverse()
     trends = start_historical_check(values, historical_data)
+    current_date = datetime.date.today()
     for trend in trends:
-        print("Price %f on %s went down %f%% before regaining full value. This took %s days." %
-              (trend.start_value, trend.start_date, trend.percentage *100, trend.get_trend_length_in_days()))
-        # pprint("Start Date: %s End Date: %s Percentage: %f" % (trend.start_date, trend.end_date, (trend.percentage * 100)))
-        # pprint("Trend Length: %d Days" % trend.get_trend_length_in_days())
+        # if script run on Sunday, base off Friday end price
+        if current_date.day == 6 and trend.end_date == (current_date - datetime.timedelta(days=2)):
+            print("Price %f on %s went down %f%% and is still down." %
+                  (trend.start_value, trend.start_date, trend.percentage * 100))
+        # if script run on Monday, base off Friday end price
+        elif current_date.day == 0 and trend.end_date == (current_date - datetime.timedelta(days=3)):
+            print("Price %f on %s went down %f%% and is still down." %
+                  (trend.start_value, trend.start_date, trend.percentage * 100))
+        # if script run on Friday, base off Thursday end price
+        elif trend.end_date == (current_date - datetime.timedelta(days=1)):
+            print("Price %f on %s went down %f%% and is still down." %
+                  (trend.start_value, trend.start_date, trend.percentage * 100))
+        else:
+            print("Price %f on %s went down %f%% before regaining full value. This took %s days." %
+                  (trend.start_value, trend.start_date, trend.percentage * 100, trend.get_trend_length_in_days()))
 
-    percentages = []
+    days = []
     for trend in trends:
         if trend.percentage >= .05:
-            percentages.append(trend.percentage)
+            days.append(trend.get_trend_length_in_days())
 
-    sum_of_percentages = sum(percentages)
+    sum_of_days = sum(days)
 
-    pprint("The average days to recovery for over 5%% is: %d" % (sum_of_percentages/len(percentages)))
+    pprint("The average days to recovery for over 5%% is: %d days" % (sum_of_days/len(days)))
+
 
 def start_historical_check(values, historical_data):
     value_count = len(values)
@@ -47,18 +56,22 @@ def start_historical_check(values, historical_data):
     current_value = values[start_index]
 
     trends = []
-    while start_index < value_count:
-        if (values[start_index] - current_value) < 0:  # this means that the value has dropped
-            return_trend = start_trend(values, historical_data, start_index, end_index)
-            if return_trend[0] is not None:
-                trends.append(return_trend[0])
-            start_index = return_trend[1]
-            start_index += 1
-            end_index = start_index
-        else:
-            current_value = values[start_index]
-            start_index += 1
-            end_index = start_index
+    try:
+        while start_index < value_count:
+            if (values[start_index] - current_value) < 0:  # this means that the value has dropped
+                return_trend = start_trend(values, historical_data, start_index, end_index)
+                if return_trend is not None and return_trend[0] is not None:
+                    trends.append(return_trend[0])
+                start_index = return_trend[1]
+                start_index += 1
+                end_index = start_index
+            else:
+                current_value = values[start_index]
+                start_index += 1
+                end_index = start_index
+    except Exception as ex:
+        pprint(ex)
+
     return trends
 
 
@@ -103,10 +116,13 @@ def print_symbols(data):
 try:
     # api_response = company_api.get_all_companies()
     parser = argparse.ArgumentParser(description="Historical analysis on stock price drops")
-    parser.add_argument('ticker', help="The ticker symbol")
-    parser.add_argument('--start_date', help="Date to start analysis (format '1970-01-01)")
+    parser.add_argument('--ticker', help="The ticker symbol (e.g. AAPL)", default='AAPL')
+    parser.add_argument('--start_date', help="Date to start analysis (format '1970-01-01)", default='2018-01-01')
+    parser.add_argument('--end_date', help="Date to end analysis (format '2019-01-01", default=str(datetime.date.today()))
+
     args = parser.parse_args()
-    historical_data_per_company(args.ticker, args.start_date)
+    # historical_data_per_company(args.ticker, args.start_date)
+    historical_data_per_company(args.ticker, args.start_date, args.end_date)
     exit(1)
 except ApiException as e:
     print("Exception when calling CompanyApi->filter_companies: %s\n" % e)
